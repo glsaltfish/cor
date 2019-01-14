@@ -2,94 +2,75 @@ from netCDF4 import Dataset
 import numpy as np
 from scipy.stats.stats import pearsonr
 import plotcor
+import calculate_corr
 import statsmodels.api as sm
 
-def detime(sy, ey, month, dsy):
-    sn = (sy - dsy) * 12
-    en = (ey + 1 - dsy) * 12
-    time = []
-    for i in month:
-        mtime = list(range(sn+i-1, en, 12))
-        time.append(mtime)
-    return time
-
-def dell(data, lons, lats, slat, elat, slon, elon):
-    ixlat = [int(np.argwhere((lats[:] == slat))), int(np.argwhere((lats[:] == elat)))]
-    ixlon = [int(np.argwhere((lons[:] == slon))), int(np.argwhere((lons[:] == elon)))]
-    areadata = data[:, min(ixlat):max(ixlat)+1, min(ixlon):max(ixlon)+1]
-    arealons = lons[min(ixlon):max(ixlon)+1]
-    arealats = lats[min(ixlat):max(ixlat)+1]
-
-    return areadata, arealons, arealats
+#col = 'bw'or'color', ranges='all'or'area'
 
 
-def verdata(data, pc, sy, ey, month, dsy):
-    dtime = detime(sy, ey, month, dsy)
-    ix = np.ix_(dtime[0])
-    msst9 = data[ix]  ##########################
-    ix = np.ix_(dtime[1])
-    msst10 = data[ix] #######################################
-
-    msst = (msst9+msst10)/2
-
-    cordata = np.empty(msst[0].shape)
-    r2 = np.empty(msst[0].shape)
-    for ilat in range(len(msst[0, :, 0])):
-        for ilon in range(len(msst[0, 0, :])):
-            w, p = fit_line(msst[:, ilat, ilon], pc)
-            cordata[ilat, ilon] = w
-            r2[ilat, ilon] = p
-
-    cordata[np.isnan(cordata[:, :])] = 0
-    delcordata = cordata.copy()
-    delcordata[np.where(r2[:, :] > 0.01)] = 0
-    return cordata, delcordata
-
-def fit_line(x, y):
-    x = sm.add_constant(x)  # 线性回归增加常数项 y=kx+b
-    regr = sm.OLS(y, x)  # 普通最小二乘模型，ordinary least square model
-    res = regr.fit()
-    pvalue = res.pvalues
-    w = res.params
-    return w[1], pvalue[1]
-
-
-def choose(csst=1, cuwnd=1, col='bw'):
+def choose(csst=1, cuwnd=1, col='bw', ranges='all',a=0.01):
     for i in range(2):
         if csst == 1:
+            #读取数据
             ncin = Dataset('sst.mnmean.v4.nc', 'r')
             sst = ncin.variables['sst'][:]
             lons = ncin.variables['lon'][:]
             lats = ncin.variables['lat'][:]
             ncin.close()
-
-            sst, lons, lats = dell(sst, lons, lats, 40, -40, 50, 130)
-
-            data, deldata = verdata(sst, pc[i], sy, ey, month, 1854)
-            # print(np.max(data), np.min(data))
-            a = plotcor.plotcors(data, deldata, lons, lats, sy, ey, 'sst  pc%i'%(i+1), col, ll='sst')
+            #分割时间
+            sst = calculate_corr.de_time(sst, sy, ey, month, 1854)
+            #计算回归系数
+            data, deldata = calculate_corr.verdata(sst, pc[i], a)
+            # np.savetxt('data0.txt', data)
+            #分割纬度
+            if ranges == 'area':
+                data, lons, lats = calculate_corr.de_ll(data, lons, lats, 40, -40, 50, 130)
+                deldata, lons, lats = calculate_corr.de_ll(deldata, lons, lats, 40, -40, 50, 130)
+            #绘图
+            # np.savetxt('data.txt', data)
+            # np.savetxt('dedata.txt', deldata)
+            a = plotcor.plotcors(data, deldata, lons, lats, col=col, ll='sst', ranges=ranges)
+            a.savefig('%s' % ('sst' + str(i) + '   ' + str(sy) + '--' + str(ey)))
 
         if cuwnd == 1:
+            #读取数据
             ncin = Dataset('uwnd.mon.mean.nc', 'r')
             uwnd200 = ncin.variables['uwnd'][:, 9, :, :]
             lons = ncin.variables['lon'][:]
             lats = ncin.variables['lat'][:]
             ncin.close()
-            # np.savetxt('uwind2.txt',uwnd200[0])
-            # np.savetxt('uwind3.txt', uwnd200[1])
-            uwnd200, lons, lats = dell(uwnd200, lons, lats, 20, 60, 60, 150)
-            data, deldata = verdata(uwnd200, pc[i], sy, ey, month, 1948)
+            #分割时间
+            uwnd200 = calculate_corr.de_time(uwnd200, sy, ey, month, 1948)
+            #计算回归系数
+            data, deldata = calculate_corr.verdata(uwnd200, pc[i], a)
+            # np.savetxt('data0.txt', data)
+            #分割纬度
+            if ranges == 'area':
+                data, lons, lats = calculate_corr.de_ll(data, lons, lats, 20, 60, 60, 150)
+                deldata, lons, lats = calculate_corr.de_ll(deldata, lons, lats, 20, 60, 60, 150)
+            #绘图
+            # np.savetxt('data.txt', data)
+            # np.savetxt('dedata.txt', deldata)
+            a = plotcor.plotcors(data, deldata, lons, lats, col=col, ll='sst', ranges=ranges)
+            a.savefig('%s' % ('sst' + str(i) + '   ' + str(sy) + '--' + str(ey)))
 
-            a = plotcor.plotcors(data, deldata, lons, lats, sy, ey, 'uwind200 pc%i'%(i+1), col)
+
+            # sst = calculate_corr.de_time(sst, sy, ey, month, 1948)
+            # data, deldata = calculate_corr.verdata(uwnd200, pc[i], a)
+            # uwnd200, lons, lats = calculate_corr.de_ll(uwnd200, lons, lats, 20, 60, 60, 150)
+            #
+            # a = plotcor.plotcors(data, deldata, lons, lats, col=col, ranges=ranges)
+
+
     return
 
+if __name__ == "__main__":
+    month = [9, 10]
+    sy = 1983
+    ey = 2016
 
-month = [9, 10]
-sy = 1983
-ey = 2016
+    pc1 = np.loadtxt('pc1  %s.txt'%(str(sy) + '--' + str(ey)))
+    pc2 = np.loadtxt('pc2  %s.txt'%(str(sy) + '--' + str(ey)))
+    pc = [pc1, pc2]
 
-pc1 = np.loadtxt('pc1  %s.txt'%(str(sy) + '--' + str(ey)))
-pc2 = np.loadtxt('pc2  %s.txt'%(str(sy) + '--' + str(ey)))
-pc = [pc1, pc2]
-
-a = choose(csst=1, cuwnd=0,col='bw')
+    a = choose(csst=1, cuwnd=0,col='color',ranges='area', a=0.01)
